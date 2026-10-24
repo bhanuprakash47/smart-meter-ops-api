@@ -1,0 +1,465 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Urja Meter Ops REST API",
+    "version": "1.0.0",
+    "description": "Clean REST API adapter over the legacy Urja Meter Ops Portal."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "Local development server"
+    }
+  ],
+  "tags": [
+    { "name": "System", "description": "Service health and sync operations" },
+    { "name": "Meters", "description": "Smart meter discovery and telemetry" },
+    { "name": "Transformers", "description": "Distribution transformer asset management" },
+    { "name": "Network", "description": "Fleet-wide network topology and data quality metrics" }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": ["System"],
+        "summary": "Health and cache sync status",
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sync": {
+      "post": {
+        "tags": ["System"],
+        "summary": "Force a fresh sync of meters and transformers from the upstream portal",
+        "responses": {
+          "200": {
+            "description": "Dataset synced",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/meters": {
+      "get": {
+        "tags": ["Meters"],
+        "summary": "List, search, and filter smart meters",
+        "parameters": [
+          { "name": "q", "in": "query", "schema": { "type": "string" }, "description": "Search by meterId or serialNo" },
+          { "name": "make", "in": "query", "schema": { "type": "string", "enum": ["HPL", "L&T", "Genus", "Allied", "Secure"] } },
+          { "name": "phaseType", "in": "query", "schema": { "type": "string", "enum": ["single", "three"] } },
+          { "name": "installStatus", "in": "query", "schema": { "type": "string", "enum": ["Installed", "Faulty", "Decommissioned"] } },
+          { "name": "installType", "in": "query", "schema": { "type": "string", "enum": ["Whole Current", "CT Operated"] } },
+          { "name": "build", "in": "query", "schema": { "type": "string", "enum": ["legacy", "v2"] } },
+          { "name": "dtCode", "in": "query", "schema": { "type": "string" }, "description": "Filter by Distribution Transformer code (e.g. DT-001)" },
+          { "name": "feederCode", "in": "query", "schema": { "type": "string" }, "description": "Filter by Feeder code (e.g. F-001)" },
+          { "name": "substationCode", "in": "query", "schema": { "type": "string" }, "description": "Filter by Substation code (e.g. SS-01)" },
+          { "name": "zoneCode", "in": "query", "schema": { "type": "string" }, "description": "Filter by Zone code (e.g. Z-01)" },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of normalized meters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedMeters"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/meters/{meterId}": {
+      "get": {
+        "tags": ["Meters"],
+        "summary": "Get full metadata, geo coordinates, and network hierarchy for a single meter",
+        "parameters": [
+          { "name": "meterId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "includeEnergy", "in": "query", "schema": { "type": "boolean", "default": false } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Meter details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeterDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Meter not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/meters/{meterId}/energy": {
+      "get": {
+        "tags": ["Meters"],
+        "summary": "Get 30-minute interval energy consumption and voltage telemetry for a meter",
+        "parameters": [
+          { "name": "meterId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date-time" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date-time" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Energy telemetry readings and summary statistics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnergyTelemetryResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Meter not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/transformers": {
+      "get": {
+        "tags": ["Transformers"],
+        "summary": "List all Distribution Transformers with connected meter counts",
+        "parameters": [
+          { "name": "feederCode", "in": "query", "schema": { "type": "string" } },
+          { "name": "capacityKva", "in": "query", "schema": { "type": "integer" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer", "default": 40 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of transformers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedTransformers"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/transformers/{dtCode}": {
+      "get": {
+        "tags": ["Transformers"],
+        "summary": "Get a Distribution Transformer and all meters connected to it",
+        "parameters": [
+          { "name": "dtCode", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transformer details and connected meters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransformerWithMeters"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Transformer not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/network/summary": {
+      "get": {
+        "tags": ["Network"],
+        "summary": "Get fleet breakdown and data-quality repair report",
+        "responses": {
+          "200": {
+            "description": "Fleet summary and anomaly report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetworkSummaryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "example": "ok" },
+          "upstream": { "type": "string", "example": "https://urja-ops.flockenergy.tech" },
+          "cache": {
+            "type": "object",
+            "properties": {
+              "syncedMeters": { "type": "integer", "example": 403 },
+              "syncedTransformers": { "type": "integer", "example": 40 },
+              "lastSyncedAt": { "type": "string", "format": "date-time", "nullable": true, "example": "2026-10-24T12:00:00.000Z" }
+            }
+          }
+        }
+      },
+      "SyncResponse": {
+        "type": "object",
+        "properties": {
+          "message": { "type": "string", "example": "Synced dataset from Urja Meter Ops Portal" },
+          "totalMeters": { "type": "integer", "example": 403 },
+          "totalTransformers": { "type": "integer", "example": 40 },
+          "syncedAt": { "type": "string", "format": "date-time", "example": "2026-10-24T12:00:00.000Z" }
+        }
+      },
+      "HierarchyNode": {
+        "type": "object",
+        "nullable": true,
+        "properties": {
+          "code": { "type": "string", "nullable": true, "example": "SS-01" },
+          "name": { "type": "string", "nullable": true, "example": "Substation 1" }
+        }
+      },
+      "DtHierarchyNode": {
+        "type": "object",
+        "nullable": true,
+        "properties": {
+          "code": { "type": "string", "nullable": true, "example": "DT-001" },
+          "name": { "type": "string", "nullable": true, "example": "Malviya Nagar DT 1" },
+          "legacyName": { "type": "string", "nullable": true, "description": "Original conflicting name before canonical repair" }
+        }
+      },
+      "Hierarchy": {
+        "type": "object",
+        "nullable": true,
+        "properties": {
+          "zone": { "$ref": "#/components/schemas/HierarchyNode" },
+          "circle": { "$ref": "#/components/schemas/HierarchyNode" },
+          "division": { "$ref": "#/components/schemas/HierarchyNode" },
+          "subdivision": { "$ref": "#/components/schemas/HierarchyNode" },
+          "substation": { "$ref": "#/components/schemas/HierarchyNode" },
+          "feeder": { "$ref": "#/components/schemas/HierarchyNode" },
+          "dt": { "$ref": "#/components/schemas/DtHierarchyNode" }
+        }
+      },
+      "GeoCoordinates": {
+        "type": "object",
+        "nullable": true,
+        "properties": {
+          "lat": { "type": "number", "example": 26.8521 },
+          "lng": { "type": "number", "example": 75.8234 }
+        }
+      },
+      "Meter": {
+        "type": "object",
+        "properties": {
+          "meterId": { "type": "string", "example": "J100000" },
+          "serialNo": { "type": "string", "example": "SE33962" },
+          "make": { "type": "string", "enum": ["HPL", "L&T", "Genus", "Allied", "Secure"], "example": "HPL" },
+          "phaseType": { "type": "string", "enum": ["single", "three"], "example": "single" },
+          "installStatus": { "type": "string", "enum": ["Installed", "Faulty", "Decommissioned"], "example": "Installed" },
+          "installType": { "type": "string", "nullable": true, "example": "Whole Current" },
+          "build": { "type": "string", "nullable": true, "example": "v2" },
+          "dtCode": { "type": "string", "nullable": true, "example": "DT-001" },
+          "hierarchy": { "$ref": "#/components/schemas/Hierarchy" },
+          "geo": { "$ref": "#/components/schemas/GeoCoordinates" },
+          "dataQualityNotes": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Repairs performed on legacy hierarchy or transformer name conflicts"
+          }
+        }
+      },
+      "MeterDetail": {
+        "allOf": [
+          { "$ref": "#/components/schemas/Meter" },
+          {
+            "type": "object",
+            "properties": {
+              "energy": {
+                "$ref": "#/components/schemas/EnergyTelemetryResponse",
+                "description": "Included when ?includeEnergy=true query parameter is supplied"
+              }
+            }
+          }
+        ]
+      },
+      "PaginatedMeters": {
+        "type": "object",
+        "properties": {
+          "total": { "type": "integer", "example": 403 },
+          "page": { "type": "integer", "example": 1 },
+          "pageSize": { "type": "integer", "example": 20 },
+          "totalPages": { "type": "integer", "example": 21 },
+          "data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Meter" }
+          }
+        }
+      },
+      "EnergyReading": {
+        "type": "object",
+        "properties": {
+          "timestamp": { "type": "string", "format": "date-time", "example": "2026-10-24T12:00:00Z" },
+          "rawTimestamp": { "type": "string", "example": "24/10/2026 12:00" },
+          "kwh": { "type": "number", "example": 142.35 },
+          "kvah": { "type": "number", "example": 145.2 },
+          "voltR": { "type": "integer", "example": 234 }
+        }
+      },
+      "EnergySummary": {
+        "type": "object",
+        "nullable": true,
+        "properties": {
+          "readingCount": { "type": "integer", "example": 48 },
+          "startTimestamp": { "type": "string", "format": "date-time" },
+          "endTimestamp": { "type": "string", "format": "date-time" },
+          "startKwh": { "type": "number", "example": 120.0 },
+          "endKwh": { "type": "number", "example": 145.5 },
+          "consumedKwh": { "type": "number", "example": 25.5 },
+          "voltageStats": {
+            "type": "object",
+            "properties": {
+              "minVoltR": { "type": "integer", "example": 218 },
+              "maxVoltR": { "type": "integer", "example": 242 },
+              "avgVoltR": { "type": "number", "example": 231.4 }
+            }
+          }
+        }
+      },
+      "EnergyTelemetryResponse": {
+        "type": "object",
+        "properties": {
+          "meterId": { "type": "string", "example": "J100000" },
+          "summary": { "$ref": "#/components/schemas/EnergySummary" },
+          "data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/EnergyReading" }
+          }
+        }
+      },
+      "Transformer": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "string", "example": "DT-001" },
+          "name": { "type": "string", "example": "Malviya Nagar DT 1" },
+          "feederCode": { "type": "string", "example": "F-001" },
+          "capacityKva": { "type": "integer", "example": 250 },
+          "meterCounts": {
+            "type": "object",
+            "properties": {
+              "total": { "type": "integer", "example": 11 },
+              "installed": { "type": "integer", "example": 9 },
+              "faulty": { "type": "integer", "example": 1 },
+              "decommissioned": { "type": "integer", "example": 1 }
+            }
+          }
+        }
+      },
+      "PaginatedTransformers": {
+        "type": "object",
+        "properties": {
+          "total": { "type": "integer", "example": 40 },
+          "page": { "type": "integer", "example": 1 },
+          "pageSize": { "type": "integer", "example": 40 },
+          "totalPages": { "type": "integer", "example": 1 },
+          "data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Transformer" }
+          }
+        }
+      },
+      "TransformerWithMeters": {
+        "allOf": [
+          { "$ref": "#/components/schemas/Transformer" },
+          {
+            "type": "object",
+            "properties": {
+              "meters": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/Meter" }
+              }
+            }
+          }
+        ]
+      },
+      "NetworkSummaryResponse": {
+        "type": "object",
+        "properties": {
+          "totalMeters": { "type": "integer", "example": 403 },
+          "totalTransformers": { "type": "integer", "example": 40 },
+          "breakdown": {
+            "type": "object",
+            "properties": {
+              "byStatus": { "type": "object", "additionalProperties": { "type": "integer" } },
+              "byMake": { "type": "object", "additionalProperties": { "type": "integer" } },
+              "byPhase": { "type": "object", "additionalProperties": { "type": "integer" } }
+            }
+          },
+          "dataQualityRepairs": {
+            "type": "object",
+            "properties": {
+              "repairedRecordCount": { "type": "integer", "example": 42 },
+              "records": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "meterId": { "type": "string" },
+                    "notes": { "type": "array", "items": { "type": "string" } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string", "example": "NotFound" },
+          "message": { "type": "string", "example": "Meter 'J999999' does not exist" }
+        }
+      }
+    }
+  }
+}
